@@ -19,11 +19,16 @@ class Spidey(scrapy.Spider):
     start_urls = ['http://www.tsetmc.com/Loader.aspx?ParTree=151311&i=67059303301834130',]
 
     def parse(self, response):
-        for quote in response.css('div'):
-            #yield {'data': quote.css('span')}
-            yield {'data': quote.xpath('span/div/text()').extract_first(), 'data2': quote.css('span.s').extract_first()}
-            #yield {'data': quote.css('span.s.div.pn')}
+        for quote in response.xpath("//div/form"):
+            yield {'yyyy': quote.xpath('div[contains(@id, "MainBox")]/div[contains(@id, "MainContent")]/div[contains(@id, "TopBox")]').extract()}
 
         for quote in response.xpath("//div/form"):
-            #yield {'data3': quote.xpath("div/text()")}
-            yield {'data3': quote.xpath("div").extract_first(), 'data4': quote.xpath("script").extract_first()}
+            yield {'xxxx': quote.xpath('div[contains(@id, "MainBox")]/div[contains(@id, "MainContent")]/div[contains(@id, "TopBox")]/node()').extract()}
+            #//*[@id="TopBox"]/div[2]
+
+        for quote in response.xpath('table'):
+            yield {'zzzz': quote.xpath('()').extract()}
+
+        for quote in response.xpath("//div/form"):
+            #yield {'script': quote.xpath("script").extract()}
+            pass
