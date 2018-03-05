@@ -5,7 +5,10 @@ import code
 import readline
 import signal
 import sys
+import os
 import requests
+import time
+import atexit
 from bs4 import BeautifulSoup
 
 def SigHandler_SIGINT(signum, frame):
@@ -17,6 +20,7 @@ class Argparser(object):
         parser = argparse.ArgumentParser()
         parser.add_argument("--url", type=str, nargs="+", help="url to scrape")
         parser.add_argument("--dbg", action="store_true", help="debug", default=False)
+        parser.add_argument("--demon", action="store_true", help="run as daemon", default=False)
         self.args = parser.parse_args()
 
 def dump1(locotta, key, data_file):
@@ -97,11 +101,7 @@ def csv_dump_page1(url, data_file):
                 #if locotta.startswith("PriceYesterday"):
                     #dump2(locotta, "PriceYesterday", data_file)
 
-def csv_dump_page2(url, data_file):
-    resp = requests.get(url)
-    soup = BeautifulSoup(resp.text, 'lxml')
-    res = soup.select("script")
-
+def csv_dump_make_header(data_file):
     data_file.write("InstrumentID,")
     data_file.write("PSGelStaMax,")
     data_file.write("PSGelStaMin,")
@@ -122,6 +122,11 @@ def csv_dump_page2(url, data_file):
     data_file.write("PriceMax,")
     #data_file.write("PriceYesterday")
     data_file.write("\n")
+
+def csv_dump_page2(url, data_file):
+    resp = requests.get(url)
+    soup = BeautifulSoup(resp.text, 'lxml')
+    res = soup.select("script")
 
     InstrumentID = str()
     PSGelStaMax = float()
@@ -225,10 +230,89 @@ def csv_dump_page2(url, data_file):
     data_file.write(PriceMax)
     data_file.write("\n")
 
+class daemon:
+    def __init__(self, pidfile):
+        self.pidfile = pidfile
+
+    def daemonize(self):
+        try:
+            pid = os.fork()
+            if pid > 0: sys.exit(0)
+        except OSError as err:
+            sys.stderr.write('fork #1 failed: {0}\n'.format(err))
+            sys.exit(1)
+        os.chdir('/')
+        os.setsid()
+        os.umask(0)
+        try:
+            pid = os.fork()
+            if pid > 0: sys.exit(0)
+        except OSError as err:
+            sys.stderr.write('fork #2 failed: {0}\n'.format(err))
+            sys.exit(1)
+        sys.stdout.flush()
+        sys.stderr.flush()
+        si = open(os.devnull, 'r')
+        so = open(os.devnull, 'a+')
+        se = open(os.devnull, 'a+')
+        os.dup2(si.fileno(), sys.stdin.fileno())
+        os.dup2(so.fileno(), sys.stdout.fileno())
+        os.dup2(se.fileno(), sys.stderr.fileno())
+        atexit.register(self.delpid)
+        pid = str(os.getpid())
+        with open(self.pidfile,'w+') as f: f.write(pid + '\n')
+
+    def delpid(self):
+        os.remove(self.pidfile)
+
+    def start(self):
+        try:
+            with open(self.pidfile,'r') as pf:
+                pid = int(pf.read().strip())
+        except IOError:
+            pid = None
+        if pid:
+            message = "pidfile {0} already exist. " + "Daemon already running?\n"
+            sys.stderr.write(message.format(self.pidfile))
+            sys.exit(1)
+        self.daemonize()
+        self.run()
+
+    def stop(self):
+        try:
+            with open(self.pidfile,'r') as pf:
+                pid = int(pf.read().strip())
+        except IOError:
+            pid = None
+        if not pid:
+            message = "pidfile {0} does not exist. " + "Daemon not running?\n"
+            sys.stderr.write(message.format(self.pidfile))
+            return
+        try:
+            while 1:
+                os.kill(pid, signal.SIGTERM)
+                time.sleep(0.1)
+        except OSError as err:
+            e = str(err.args)
+            if e.find("No such process") > 0:
+                if os.path.exists(self.pidfile):
+                    os.remove(self.pidfile)
+            else:
+                print (str(err.args))
+                sys.exit(1)
+
+    def restart(self):
+        self.stop()
+        self.start()
+
+    def run(self):
+        pass
+
 def premain(argparser):
     signal.signal(signal.SIGINT, SigHandler_SIGINT)
     ###########################################################################
     data_file = open("data.csv", "w")
+    csv_dump_make_header(data_file)
     for url in argparser.args.url:
         csv_dump_page2(url, data_file)
     data_file.close()
