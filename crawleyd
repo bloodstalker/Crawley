@@ -9,6 +9,7 @@ import os
 import requests
 import time
 import atexit
+from abc import ABCMeta, abstractmethod
 from bs4 import BeautifulSoup
 
 def SigHandler_SIGINT(signum, frame):
@@ -21,6 +22,7 @@ class Argparser(object):
         parser.add_argument("--url", type=str, nargs="+", help="url to scrape")
         parser.add_argument("--dbg", action="store_true", help="debug", default=False)
         parser.add_argument("--demon", action="store_true", help="run as daemon", default=False)
+        parser.add_argument("--slumber", type=int, help="how long the demon sleeps", default=60)
         self.args = parser.parse_args()
 
 def dump1(locotta, key, data_file):
@@ -230,9 +232,11 @@ def csv_dump_page2(url, data_file):
     data_file.write(PriceMax)
     data_file.write("\n")
 
-class daemon:
-    def __init__(self, pidfile):
+class Daemon_Father:
+    __metaclass__ = ABCMeta
+    def __init__(self, pidfile, argparser):
         self.pidfile = pidfile
+        self.argparser = argparser
 
     def daemonize(self):
         try:
@@ -263,6 +267,7 @@ class daemon:
         with open(self.pidfile,'w+') as f: f.write(pid + '\n')
 
     def delpid(self):
+        self.pidfile.close()
         os.remove(self.pidfile)
 
     def start(self):
@@ -305,12 +310,33 @@ class daemon:
         self.stop()
         self.start()
 
+    @abstractmethod
     def run(self):
         pass
+
+    def __del__(self):
+        self.pidfile.close()
+
+class Daemon(Daemon_Father):
+    def run(self):
+        os.remove("data.csv")
+        data_file = open("data.csv", "a")
+        csv_dump_make_header(data_file)
+        data_file.close()
+        while True:
+            data_file = open("data.csv", "a")
+            for url in self.argparser.args.url:
+                csv_dump_page2(url, data_file)
+            data_file.close()
+            time.sleep(self.argparser.args.slumber)
 
 def premain(argparser):
     signal.signal(signal.SIGINT, SigHandler_SIGINT)
     ###########################################################################
+    pidfile = open("/tmp/crawleyd_pidfile", "w")
+    if argparser.args.demon:
+        daemon = Daemon(pidfile, argparser)
+        daemon.run()
     data_file = open("data.csv", "w")
     csv_dump_make_header(data_file)
     for url in argparser.args.url:
