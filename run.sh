@@ -1,5 +1,4 @@
 #!/bin/bash 
+cd $(dirname $0)
+./main.py --url http://www.tsetmc.com/Loader.aspx\?ParTree\=151311\&i\=67059303301834130
 
-rm ./data.json || true
-"scrapy" runspider ./crawley.py -o ./data.json -s LOG_ENABLED=False
-less ./data.json
